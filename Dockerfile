@@ -39,6 +39,7 @@ ARG COMPILE
 COPY --chown=ubuntu:ubuntu . ./kana
 RUN . ./miniconda3/bin/activate && \
     conda create -y -n compile_py310 python=3.10 && conda activate compile_py310 && \
+    pip config set global.index-url https://mirrors.sustech.edu.cn/pypi/web/simple && \
     cd kana/thirdparty/intel-extension-for-pytorch/examples/cpu/inference/python/llm && \
     if [ -z ${COMPILE} ]; then bash tools/env_setup.sh 6; else bash tools/env_setup.sh 2; fi
 
@@ -48,6 +49,7 @@ RUN rm ./llm/tools/get_libstdcpp_lib.sh
 COPY --from=dev --chown=ubuntu:ubuntu /home/ubuntu/kana/thirdparty/intel-extension-for-pytorch/examples/cpu/inference/python/llm/tools/get_libstdcpp_lib.sh ./llm/tools/get_libstdcpp_lib.sh
 RUN . ./miniconda3/bin/activate && \
     conda create -y -n kana python=3.10 && conda activate py310 && \
+    pip config set global.index-url https://mirrors.sustech.edu.cn/pypi/web/simple && \
     echo "conda activate kana" >> ./.bashrc && \
     cd ./llm && \
     bash tools/env_setup.sh 1 && \

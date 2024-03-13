@@ -17,8 +17,7 @@ parser.add_argument(
     "-m",
     "--model",
     type=str,
-    default="EleutherAI/gpt-j-6B",
-    help="the huggingface mdoel id",
+    help="model path",
 )
 parser.add_argument(
     "--dtype",
@@ -31,12 +30,9 @@ parser.add_argument("--max-new-tokens", default=32, type=int, help="output max n
 parser.add_argument("--ipex", action="store_true")
 parser.add_argument("--torch-compile", action="store_true")
 parser.add_argument("--backend", default="ipex", type=str, help="backend of torch.compile")
-parser.add_argument("--num-iter", default=100, type=int, help="num iter")
-parser.add_argument("--num-warmup", default=10, type=int, help="num warmup")
+parser.add_argument("--num-iter", default=20, type=int, help="num iter")
+parser.add_argument("--num-warmup", default=2, type=int, help="num warmup")
 parser.add_argument("--batch-size", default=1, type=int, help="batch size")
-parser.add_argument(
-    "--token-latency", action="store_true", help="get token latency breakdown"
-)
 args = parser.parse_args()
 print(args)
 
@@ -81,9 +77,8 @@ if args.ipex:
 if args.torch_compile:
     model.forward = torch.compile(model.forward, dynamic=True, backend=args.backend)
 
-num_beams = 4
 # generate args
-generate_kwargs = dict(do_sample=False, temperature=0.9, num_beams=num_beams, max_new_tokens=args.max_new_tokens,
+generate_kwargs = dict(do_sample=False, temperature=0.9, num_beams=4, max_new_tokens=args.max_new_tokens,
                        min_new_tokens=args.max_new_tokens)
 
 
@@ -92,9 +87,8 @@ def trace_handler(prof):
 
 
 if __name__ == '__main__':
-    if args.token_latency:
-        if not hasattr(model.config, "token_latency"):
-            model.config.token_latency = True
+    if not hasattr(model.config, "token_latency"):
+        model.config.token_latency = True
 
     # input prompt
     with open("./prompt.json") as f:
@@ -128,7 +122,7 @@ if __name__ == '__main__':
             tic = time.time()
             input_ids = tokenizer(prompt, return_tensors="pt").input_ids
             output = model.generate(input_ids, **generate_kwargs)
-            gen_ids = output[0] if args.token_latency else output
+            gen_ids = output[0]
             gen_text = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)
             toc = time.time()
             input_tokens_lengths = [x.shape[0] for x in input_ids]
@@ -141,8 +135,7 @@ if __name__ == '__main__':
             print("Iteration: %d, Time: %.6f sec" % (i, toc - tic), flush=True)
             if i >= num_warmup:
                 total_time += toc - tic
-                if args.token_latency:
-                    total_list.append(output[1])
+                total_list.append(output[1])
 
     print("\n", "-" * 10, "Summary:", "-" * 10)
     latency = total_time / (num_iter - num_warmup)
@@ -152,9 +145,5 @@ if __name__ == '__main__':
     average_2n = list(chain(*[x[1:] for x in total_list]))
     average_2n.sort()
     average_2n_latency = np.mean(average_2n)
-    p90_latency = average_2n[int(len(average_2n) * 0.9)]
-    p99_latency = average_2n[int(len(average_2n) * 0.99)]
     print("First token average latency: %.3f sec." % first_latency)
     print("Average 2... latency: %.3f sec." % average_2n_latency)
-    print("P90 2... latency: %.3f sec." % p90_latency)
-    print("P99 2... latency: %.3f sec." % p99_latency)

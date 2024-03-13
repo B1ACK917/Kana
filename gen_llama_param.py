@@ -1,6 +1,15 @@
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM
+import argparse
 
-config = AutoConfig.from_pretrained('./model/Llama-2-7b-hf')
+parser = argparse.ArgumentParser("Kana Benchmark Model Parameter Generator", add_help=False)
+parser.add_argument(
+    "-m",
+    "--model",
+    type=str,
+    help="model path (should contain config.json)",
+)
+args = parser.parse_args()
+
+config = AutoConfig.from_pretrained(args.model)
 model = AutoModelForCausalLM.from_config(config=config)
-tokenizer = AutoTokenizer.from_pretrained('./model/Llama-2-7b-hf')
-model.save_pretrained("model/test")
+model.save_pretrained(args.model)
