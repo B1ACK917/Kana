@@ -47,15 +47,15 @@ python gen_llama_param.py -m model/Llama-2-7b-chat-hf
 ```
 ### 3.2 Running with pytorch
 ```bash
-OMP_NUM_THREADS=$(nproc)$ python bench_llama.py -m model/Llama-2-7b-hf --dtype float32
+OMP_NUM_THREADS=$(nproc) python bench_llama.py -m model/Llama-2-7b-hf --dtype float32
 ```
 
 ### 3.3 Running with IPEX accelerated pytorch
 ```bash
-OMP_NUM_THREADS=$(nproc)$ python bench_llama.py -m model/Llama-2-7b-hf --dtype float32 --ipex
+OMP_NUM_THREADS=$(nproc) python bench_llama.py -m model/Llama-2-7b-hf --dtype float32 --ipex
 ```
 
 ### 3.4 Running with IPEX accelerated pytorch and with a bfloat16 instead of float32
 ```bash
-OMP_NUM_THREADS=$(nproc)$ python bench_llama.py -m model/Llama-2-7b-hf --dtype bfloat16 --ipex
+OMP_NUM_THREADS=$(nproc) python bench_llama.py -m model/Llama-2-7b-hf --dtype bfloat16 --ipex
 ```
