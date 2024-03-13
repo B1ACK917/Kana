@@ -27,6 +27,7 @@ parser.add_argument(
     help="bfloat16, float32",
 )
 parser.add_argument("--max-new-tokens", default=32, type=int, help="output max new tokens")
+parser.add_argument("--profile", action="store_true")
 parser.add_argument("--ipex", action="store_true")
 parser.add_argument("--torch-compile", action="store_true")
 parser.add_argument("--backend", default="ipex", type=str, help="backend of torch.compile")
@@ -78,8 +79,7 @@ if args.torch_compile:
     model.forward = torch.compile(model.forward, dynamic=True, backend=args.backend)
 
 # generate args
-generate_kwargs = dict(do_sample=False, temperature=0.9, num_beams=4, max_new_tokens=args.max_new_tokens,
-                       min_new_tokens=args.max_new_tokens)
+generate_kwargs = dict(do_sample=False, max_new_tokens=args.max_new_tokens, min_new_tokens=args.max_new_tokens)
 
 
 def trace_handler(prof):
@@ -87,9 +87,6 @@ def trace_handler(prof):
 
 
 if __name__ == '__main__':
-    if not hasattr(model.config, "token_latency"):
-        model.config.token_latency = True
-
     # input prompt
     with open("./prompt.json") as f:
         prompt_pool = json.load(f)
@@ -102,27 +99,27 @@ if __name__ == '__main__':
     num_iter = args.num_iter
     num_warmup = args.num_warmup
     prompt = [prompt] * args.batch_size
-    total_list = []
     with torch.inference_mode(), torch.no_grad(), torch.cpu.amp.autocast(
             enabled=amp_enabled
     ):
         # profile
-        # with torch.profiler.profile(
-        #         activities=[torch.profiler.ProfilerActivity.CPU],
-        #         schedule=torch.profiler.schedule(wait=1, warmup=3, active=1),
-        #         on_trace_ready=trace_handler,
-        # ) as prof:
-        #     for i in range(5):
-        #         input_ids = tokenizer(prompt, return_tensors="pt").input_ids
-        #         output = model.generate(input_ids, **generate_kwargs)
-        #         prof.step()
+        if args.profile:
+            with torch.profiler.profile(
+                    activities=[torch.profiler.ProfilerActivity.CPU],
+                    schedule=torch.profiler.schedule(wait=1, warmup=3, active=1),
+                    on_trace_ready=trace_handler,
+            ) as prof:
+                for i in range(5):
+                    input_ids = tokenizer(prompt, return_tensors="pt").input_ids
+                    output = model.generate(input_ids, **generate_kwargs)
+                    prof.step()
 
         # benchmark
         for i in range(num_iter):
             tic = time.time()
             input_ids = tokenizer(prompt, return_tensors="pt").input_ids
             output = model.generate(input_ids, **generate_kwargs)
-            gen_ids = output[0]
+            gen_ids = output
             gen_text = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)
             toc = time.time()
             input_tokens_lengths = [x.shape[0] for x in input_ids]
@@ -135,15 +132,7 @@ if __name__ == '__main__':
             print("Iteration: %d, Time: %.6f sec" % (i, toc - tic), flush=True)
             if i >= num_warmup:
                 total_time += toc - tic
-                total_list.append(output[1])
 
     print("\n", "-" * 10, "Summary:", "-" * 10)
     latency = total_time / (num_iter - num_warmup)
     print("Inference latency: %.3f sec." % latency)
-
-    first_latency = np.mean([x[0] for x in total_list])
-    average_2n = list(chain(*[x[1:] for x in total_list]))
-    average_2n.sort()
-    average_2n_latency = np.mean(average_2n)
-    print("First token average latency: %.3f sec." % first_latency)
-    print("Average 2... latency: %.3f sec." % average_2n_latency)

@@ -1,3 +1,4 @@
 **/*.safetensors
 **/generation_config.json
 **/model.safetensors.index.json
+log
