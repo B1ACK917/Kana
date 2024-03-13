@@ -48,8 +48,7 @@ COPY --from=dev --chown=ubuntu:ubuntu /home/ubuntu/kana/thirdparty/intel-extensi
 RUN rm ./llm/tools/get_libstdcpp_lib.sh
 COPY --from=dev --chown=ubuntu:ubuntu /home/ubuntu/kana/thirdparty/intel-extension-for-pytorch/examples/cpu/inference/python/llm/tools/get_libstdcpp_lib.sh ./llm/tools/get_libstdcpp_lib.sh
 RUN . ./miniconda3/bin/activate && \
-    conda create -y -n kana python=3.10 && conda activate py310 && \
-    pip config set global.index-url https://mirrors.sustech.edu.cn/pypi/web/simple && \
+    conda create -y -n kana python=3.10 && conda activate kana && \
     echo "conda activate kana" >> ./.bashrc && \
     cd ./llm && \
     bash tools/env_setup.sh 1 && \
