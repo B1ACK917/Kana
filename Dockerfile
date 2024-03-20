@@ -34,26 +34,11 @@ RUN curl -fsSL -v -o miniconda.sh -O https://repo.anaconda.com/miniconda/Minicon
     rm miniconda.sh && \
     echo "source ~/miniconda3/bin/activate" >> ./.bashrc
 
-FROM base AS dev
-ARG COMPILE
+FROM base AS deploy
 COPY --chown=ubuntu:ubuntu . ./kana
 RUN . ./miniconda3/bin/activate && \
-    conda create -y -n compile_py310 python=3.10 && conda activate compile_py310 && \
-    pip config set global.index-url https://mirrors.sustech.edu.cn/pypi/web/simple && \
-    cd kana/thirdparty/intel-extension-for-pytorch/examples/cpu/inference/python/llm && \
-    if [ -z ${COMPILE} ]; then bash tools/env_setup.sh 6; else bash tools/env_setup.sh 2; fi
-
-FROM base AS deploy
-COPY --from=dev --chown=ubuntu:ubuntu /home/ubuntu/kana/thirdparty/intel-extension-for-pytorch/examples/cpu/inference/python/llm ./llm
-RUN rm ./llm/tools/get_libstdcpp_lib.sh
-COPY --from=dev --chown=ubuntu:ubuntu /home/ubuntu/kana/thirdparty/intel-extension-for-pytorch/examples/cpu/inference/python/llm/tools/get_libstdcpp_lib.sh ./llm/tools/get_libstdcpp_lib.sh
-RUN . ./miniconda3/bin/activate && \
     conda create -y -n kana python=3.10 && conda activate kana && \
+    pip config set global.index-url https://mirrors.sustech.edu.cn/pypi/web/simple && \
     echo "conda activate kana" >> ./.bashrc && \
-    cd ./llm && \
-    bash tools/env_setup.sh 1 && \
-    python -m pip cache purge && \
-    conda clean -a -y && \
-    sudo mv ./oneCCL_release /opt/oneCCL && \
-    sudo chown -R root:root /opt/oneCCL && \
-    sed -i "s|ONECCL_PATH=.*|ONECCL_PATH=/opt/oneCCL|" ./tools/env_activate.sh
+    cd ./kana/thirdparty/intel-extension-for-pytorch/examples/cpu/inference/python/llm && \
+    bash tools/env_setup.sh 7
