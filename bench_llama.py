@@ -1,5 +1,4 @@
 import torch
-import time
 import json
 import argparse
 
@@ -7,8 +6,10 @@ from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     LlamaTokenizer,
+    TrainingArguments,
+    HfArgumentParser
 )
-from utils.bench import bench_inference
+from utils.bench import bench_inference, bench_finetune
 
 # args
 parser = argparse.ArgumentParser("Kana IPEX Benchmark Kit", add_help=False)
@@ -110,7 +111,9 @@ if __name__ == '__main__':
                 case "inference":
                     total_time = bench_inference(tokenizer, model, prompt, generate_kwargs, num_iter, num_warmup)
                 case "finetune":
-                    total_time = bench_inference(tokenizer, model, prompt, generate_kwargs, num_iter, num_warmup)
+                    parser = HfArgumentParser([TrainingArguments])
+                    training_args = parser.parse_args_into_dataclasses()[0]
+                    total_time, result = bench_finetune("data/alpaca_small.json", tokenizer, model, training_args)
                 case _:
                     total_time = 0
             print("\n", "-" * 10, "Summary:", "-" * 10)

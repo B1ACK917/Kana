@@ -1,4 +1,6 @@
 import time
+from dataset import SupervisedData, DataCollator
+from transformers import Trainer
 
 
 def bench_inference(tokenizer, model, prompt, generate_kwargs, num_iter, num_warmup):
@@ -21,3 +23,15 @@ def bench_inference(tokenizer, model, prompt, generate_kwargs, num_iter, num_war
         if i >= num_warmup:
             total_time += toc - tic
         return total_time
+
+
+def bench_finetune(data_path, tokenizer, model, training_args):
+    dataset = SupervisedData(file_path=data_path, tokenizer=tokenizer)
+    data_collator = DataCollator(tokenizer=tokenizer)
+    data = dict(train_dataset=dataset, eval_dataset=dataset, data_collator=data_collator)
+
+    print("Start training")
+    tic = time.time()
+    trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data)
+    train_result = trainer.train()
+    return time.time() - tic, train_result
