@@ -4,6 +4,7 @@
     "LlamaForCausalLM"
   ],
   "attention_bias": false,
+  "attention_dropout": 0.0,
   "bos_token_id": 1,
   "eos_token_id": 2,
   "hidden_act": "silu",
@@ -21,7 +22,7 @@
   "rope_theta": 10000.0,
   "tie_word_embeddings": false,
   "torch_dtype": "float32",
-  "transformers_version": "4.35.2",
+  "transformers_version": "4.40.0",
   "use_cache": true,
   "vocab_size": 32000
 }

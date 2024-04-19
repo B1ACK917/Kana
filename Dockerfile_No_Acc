@@ -1,0 +1,43 @@
+ARG BASE_IMAGE=ubuntu:22.04
+FROM ${BASE_IMAGE} AS base
+RUN if [ -f /etc/apt/apt.conf.d/proxy.conf ]; then rm /etc/apt/apt.conf.d/proxy.conf; fi && \
+    if [ ! -z ${HTTP_PROXY} ]; then echo "Acquire::http::Proxy \"${HTTP_PROXY}\";" >> /etc/apt/apt.conf.d/proxy.conf; fi && \
+    if [ ! -z ${HTTPS_PROXY} ]; then echo "Acquire::https::Proxy \"${HTTPS_PROXY}\";" >> /etc/apt/apt.conf.d/proxy.conf; fi
+RUN apt update && \
+    apt full-upgrade -y && \
+    DEBIAN_FRONTEND=noninteractive apt install --no-install-recommends -y \
+    sudo \
+    ca-certificates \
+    git \
+    curl \
+    wget \
+    vim \
+    numactl \
+    gcc-12 \
+    g++-12 \
+    make
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100 && \
+    update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 100 && \
+    update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 100
+RUN apt clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    if [ -f /etc/apt/apt.conf.d/proxy.conf ]; then rm /etc/apt/apt.conf.d/proxy.conf; fi
+
+RUN useradd -m ubuntu && \
+    echo 'ubuntu ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+USER ubuntu
+WORKDIR /home/ubuntu
+
+RUN curl -fsSL -v -o miniconda.sh -O https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh  && \
+    bash miniconda.sh -b -p ./miniconda3 && \
+    rm miniconda.sh && \
+    echo "source ~/miniconda3/bin/activate" >> ./.bashrc
+
+FROM base AS deploy
+COPY --chown=ubuntu:ubuntu . ./kana
+RUN . ./miniconda3/bin/activate && \
+    conda create -y -n kana python=3.10 && conda activate kana && \
+    pip config set global.index-url https://mirrors.sustech.edu.cn/pypi/web/simple && \
+    echo "conda activate kana" >> ./.bashrc && \
+    pip install transformers torch

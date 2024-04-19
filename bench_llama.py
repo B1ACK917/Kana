@@ -2,14 +2,13 @@ import torch
 import time
 import json
 import argparse
-import numpy as np
-from itertools import chain
 
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     LlamaTokenizer,
 )
+from utils.bench import bench_inference
 
 # args
 parser = argparse.ArgumentParser("Kana IPEX Benchmark Kit", add_help=False)
@@ -27,10 +26,9 @@ parser.add_argument(
     help="bfloat16, float32",
 )
 parser.add_argument("--max-new-tokens", default=32, type=int, help="output max new tokens")
-parser.add_argument("--profile", action="store_true")
+parser.add_argument("--bench", default="inference", type=str, help="select from [inference, finetune, all]")
+parser.add_argument("--peft", action="store_true")
 parser.add_argument("--ipex", action="store_true")
-parser.add_argument("--torch-compile", action="store_true")
-parser.add_argument("--backend", default="ipex", type=str, help="backend of torch.compile")
 parser.add_argument("--num-iter", default=20, type=int, help="num iter")
 parser.add_argument("--num-warmup", default=2, type=int, help="num warmup")
 parser.add_argument("--batch-size", default=1, type=int, help="batch size")
@@ -75,9 +73,6 @@ if args.ipex:
         inplace=True,
     )
 
-if args.torch_compile:
-    model.forward = torch.compile(model.forward, dynamic=True, backend=args.backend)
-
 # generate args
 generate_kwargs = dict(do_sample=False, max_new_tokens=args.max_new_tokens, min_new_tokens=args.max_new_tokens)
 
@@ -94,45 +89,30 @@ if __name__ == '__main__':
     input_size = tokenizer(prompt, return_tensors="pt").input_ids.size(dim=1)
     print("---- Prompt size:", input_size)
 
+    # set bench
+    valid = ["inference", "finetune"]
+    if args.bench == "all":
+        bench = valid
+    else:
+        bench = [args.bench]
+    for b in bench:
+        assert b in valid, f"{b} not in f{valid}"
+
     # start
-    total_time = 0.0
     num_iter = args.num_iter
     num_warmup = args.num_warmup
     prompt = [prompt] * args.batch_size
     with torch.inference_mode(), torch.no_grad(), torch.cpu.amp.autocast(
             enabled=amp_enabled
     ):
-        # profile
-        if args.profile:
-            with torch.profiler.profile(
-                    activities=[torch.profiler.ProfilerActivity.CPU],
-                    schedule=torch.profiler.schedule(wait=1, warmup=3, active=1),
-                    on_trace_ready=trace_handler,
-            ) as prof:
-                for i in range(5):
-                    input_ids = tokenizer(prompt, return_tensors="pt").input_ids
-                    output = model.generate(input_ids, **generate_kwargs)
-                    prof.step()
-
-        # benchmark
-        for i in range(num_iter):
-            tic = time.time()
-            input_ids = tokenizer(prompt, return_tensors="pt").input_ids
-            output = model.generate(input_ids, **generate_kwargs)
-            gen_ids = output
-            gen_text = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)
-            toc = time.time()
-            input_tokens_lengths = [x.shape[0] for x in input_ids]
-            output_tokens_lengths = [x.shape[0] for x in gen_ids]
-            total_new_tokens = [
-                o - i
-                for i, o in zip(input_tokens_lengths, output_tokens_lengths)
-            ]
-            print(gen_text, total_new_tokens, flush=True)
-            print("Iteration: %d, Time: %.6f sec" % (i, toc - tic), flush=True)
-            if i >= num_warmup:
-                total_time += toc - tic
-
-    print("\n", "-" * 10, "Summary:", "-" * 10)
-    latency = total_time / (num_iter - num_warmup)
-    print("Inference latency: %.3f sec." % latency)
+        for bench_type in bench:
+            match bench_type:
+                case "inference":
+                    total_time = bench_inference(tokenizer, model, prompt, generate_kwargs, num_iter, num_warmup)
+                case "finetune":
+                    total_time = bench_inference(tokenizer, model, prompt, generate_kwargs, num_iter, num_warmup)
+                case _:
+                    total_time = 0
+            print("\n", "-" * 10, "Summary:", "-" * 10)
+            latency = total_time / (num_iter - num_warmup)
+            print(f"{bench_type} latency: {latency:.3f} sec.")
