@@ -7,9 +7,10 @@ from transformers import (
     AutoModelForCausalLM,
     LlamaTokenizer,
     TrainingArguments,
-    HfArgumentParser
 )
 from utils.bench import bench_inference, bench_finetune
+from utils.dataset import DEFAULT_BOS_TOKEN, DEFAULT_EOS_TOKEN, DEFAULT_UNK_TOKEN, DEFAULT_PAD_TOKEN
+from peft import LoraConfig
 
 # args
 parser = argparse.ArgumentParser("Kana IPEX Benchmark Kit", add_help=False)
@@ -33,56 +34,89 @@ parser.add_argument("--ipex", action="store_true")
 parser.add_argument("--num-iter", default=20, type=int, help="num iter")
 parser.add_argument("--num-warmup", default=2, type=int, help="num warmup")
 parser.add_argument("--batch-size", default=1, type=int, help="batch size")
+parser.add_argument("--epoch", default=1.0, type=float, help="train epoch")
 args = parser.parse_args()
 print(args)
-
-# dtype
-amp_enabled = True if args.dtype != "float32" else False
-amp_dtype = getattr(torch, args.dtype)
-
-# load model
-config = AutoConfig.from_pretrained(
-    args.model, trust_remote_code=True
-)
-if not hasattr(config, "lm_head_generation"):
-    config.lm_head_generation = True
-
-model = AutoModelForCausalLM.from_pretrained(
-    args.model,
-    torch_dtype=amp_dtype,
-    config=config,
-    low_cpu_mem_usage=True,
-    trust_remote_code=True
-)
-tokenizer = LlamaTokenizer.from_pretrained(args.model, trust_remote_code=True)
-model = model.eval()
-model = model.to(memory_format=torch.channels_last)
-
-# to ipex
-if args.ipex:
-    import intel_extension_for_pytorch as ipex
-
-    torch._C._jit_set_texpr_fuser_enabled(False)
-    try:
-        ipex._C.disable_jit_linear_repack()
-    except Exception:
-        print("ipex._C.disable_jit_linear_repack() failed")
-
-    model = ipex.llm.optimize(
-        model.eval(),
-        dtype=amp_dtype,
-        inplace=True,
-    )
-
-# generate args
-generate_kwargs = dict(do_sample=False, max_new_tokens=args.max_new_tokens, min_new_tokens=args.max_new_tokens)
 
 
 def trace_handler(prof):
     print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=-1))
 
 
+def smart_tokenizer_and_embedding_resize(special_tokens_dict, tokenizer, model):
+    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
+    model.resize_token_embeddings(len(tokenizer))
+
+    if num_new_tokens > 0:
+        input_embeddings = model.get_input_embeddings().weight.data
+        output_embeddings = model.get_output_embeddings().weight.data
+
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+
+        input_embeddings[-num_new_tokens:] = input_embeddings_avg
+        output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+
 if __name__ == '__main__':
+    # dtype
+    amp_enabled = True if args.dtype != "float32" else False
+    amp_dtype = getattr(torch, args.dtype)
+
+    # load model
+    config = AutoConfig.from_pretrained(args.model, trust_remote_code=True)
+    if not hasattr(config, "lm_head_generation"):
+        config.lm_head_generation = True
+
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        torch_dtype=amp_dtype,
+        config=config,
+        low_cpu_mem_usage=True,
+        trust_remote_code=True
+    )
+    if args.peft:
+        peft_config = LoraConfig(
+            lora_alpha=16,
+            lora_dropout=0.1,
+            r=64,
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+        model.add_adapter(peft_config)
+    tokenizer = LlamaTokenizer.from_pretrained(args.model, trust_remote_code=True)
+
+    special_tokens_dict = dict()
+    if tokenizer.pad_token is None:
+        special_tokens_dict["pad_token"] = DEFAULT_PAD_TOKEN
+    if tokenizer.eos_token is None:
+        special_tokens_dict["eos_token"] = DEFAULT_EOS_TOKEN
+    if tokenizer.bos_token is None:
+        special_tokens_dict["bos_token"] = DEFAULT_BOS_TOKEN
+    if tokenizer.unk_token is None:
+        special_tokens_dict["unk_token"] = DEFAULT_UNK_TOKEN
+
+    smart_tokenizer_and_embedding_resize(special_tokens_dict=special_tokens_dict, tokenizer=tokenizer, model=model)
+
+    # to ipex
+    if args.ipex:
+        import intel_extension_for_pytorch as ipex
+
+        torch._C._jit_set_texpr_fuser_enabled(False)
+        try:
+            ipex._C.disable_jit_linear_repack()
+        except Exception:
+            print("ipex._C.disable_jit_linear_repack() failed")
+
+        model = ipex.llm.optimize(
+            model.eval(),
+            dtype=amp_dtype,
+            inplace=True,
+        )
+
+    # generate args
+    generate_kwargs = dict(do_sample=False, max_new_tokens=args.max_new_tokens, min_new_tokens=args.max_new_tokens)
+
     # input prompt
     with open("./prompt.json") as f:
         prompt_pool = json.load(f)
@@ -103,19 +137,19 @@ if __name__ == '__main__':
     num_iter = args.num_iter
     num_warmup = args.num_warmup
     prompt = [prompt] * args.batch_size
-    with torch.inference_mode(), torch.no_grad(), torch.cpu.amp.autocast(
-            enabled=amp_enabled
-    ):
-        for bench_type in bench:
-            match bench_type:
-                case "inference":
+    for bench_type in bench:
+        match bench_type:
+            case "inference":
+                with torch.inference_mode(), torch.no_grad(), torch.cpu.amp.autocast(enabled=amp_enabled):
+                    model = model.eval()
+                    model = model.to(memory_format=torch.channels_last)
                     total_time = bench_inference(tokenizer, model, prompt, generate_kwargs, num_iter, num_warmup)
-                case "finetune":
-                    parser = HfArgumentParser([TrainingArguments])
-                    training_args = parser.parse_args_into_dataclasses()[0]
-                    total_time, result = bench_finetune("data/alpaca_small.json", tokenizer, model, training_args)
-                case _:
-                    total_time = 0
-            print("\n", "-" * 10, "Summary:", "-" * 10)
-            latency = total_time / (num_iter - num_warmup)
-            print(f"{bench_type} latency: {latency:.3f} sec.")
+            case "finetune":
+                training_args = TrainingArguments(output_dir="temp/model", num_train_epochs=args.epoch,
+                                                  per_device_train_batch_size=8)
+                total_time, result = bench_finetune("data/alpaca_small.json", tokenizer, model, training_args)
+            case _:
+                total_time = 0
+        print("\n", "-" * 10, "Summary:", "-" * 10)
+        latency = total_time / (num_iter - num_warmup)
+        print(f"{bench_type} latency: {latency:.3f} sec.")
