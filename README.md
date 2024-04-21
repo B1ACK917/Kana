@@ -52,6 +52,7 @@ python gen_llama_param.py -m model/Llama-2-7b-chat-hf
 lscpu | awk '/^Socket\(s\):/ {sockets=$2} /^Core\(s\) per socket:/ {cores=$4} END {print sockets*cores}'
 ```
 Set the OMP_NUM_THREADS with the **physical core num** instead of logical core num, otherwise it will be slower. See [Context Switch](https://www.techtarget.com/whatis/definition/context-switch)
+
 ### 3.3 Running with pytorch
 ```bash
 OMP_NUM_THREADS=8 python bench_llama.py -m model/Llama-2-7b-chat-hf --dtype float32
@@ -72,6 +73,11 @@ OMP_NUM_THREADS=8 python bench_llama.py -m model/Llama-2-7b-chat-hf --dtype bflo
 ```bash
 OMP_NUM_THREADS=8 python bench_llama.py -m model/Llama-2-7b-chat-hf --dtype float32 --ipex --torch-compile
 OMP_NUM_THREADS=8 python bench_llama.py -m model/Llama-2-7b-chat-hf --dtype bfloat16 --ipex --torch-compile
+```
+
+### 3.7 Bench Fine-tune
+```bash
+OMP_NUM_THREADS=8 python bench_llama.py -m model/Llama-2-7b-chat-hf --dtype float32 --bench finetune --batch-size 8
 ```
 
 # 4 Benchmark Result

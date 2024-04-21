@@ -35,6 +35,8 @@ parser.add_argument("--num-iter", default=20, type=int, help="num iter")
 parser.add_argument("--num-warmup", default=2, type=int, help="num warmup")
 parser.add_argument("--batch-size", default=1, type=int, help="batch size")
 parser.add_argument("--epoch", default=1.0, type=float, help="train epoch")
+parser.add_argument("--output", default="temp/model", type=str, help="finetune model output dir")
+parser.add_argument("--data", default="data/alpaca_small.json", type=str, help="finetune data input")
 args = parser.parse_args()
 print(args)
 
@@ -144,12 +146,15 @@ if __name__ == '__main__':
                     model = model.eval()
                     model = model.to(memory_format=torch.channels_last)
                     total_time = bench_inference(tokenizer, model, prompt, generate_kwargs, num_iter, num_warmup)
+                print("\n", "-" * 10, "Summary:", "-" * 10)
+                latency = total_time / (num_iter - num_warmup)
+                print(f"{bench_type} latency: {latency:.3f} sec.")
             case "finetune":
-                training_args = TrainingArguments(output_dir="temp/model", num_train_epochs=args.epoch,
-                                                  per_device_train_batch_size=8)
-                total_time, result = bench_finetune("data/alpaca_small.json", tokenizer, model, training_args)
+                training_args = TrainingArguments(output_dir=args.output, num_train_epochs=args.epoch,
+                                                  per_device_train_batch_size=args.batch_size)
+                total_time, result = bench_finetune(args.data, tokenizer, model, training_args)
+                print("\n", "-" * 10, "Summary:", "-" * 10)
+                print(f"{bench_type} total elapsed: {total_time:.3f} sec.")
             case _:
                 total_time = 0
-        print("\n", "-" * 10, "Summary:", "-" * 10)
-        latency = total_time / (num_iter - num_warmup)
-        print(f"{bench_type} latency: {latency:.3f} sec.")
+                print("No valid --bench, skip")
