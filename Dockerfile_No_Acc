@@ -38,6 +38,5 @@ FROM base AS deploy
 COPY --chown=ubuntu:ubuntu . ./kana
 RUN . ./miniconda3/bin/activate && \
     conda create -y -n kana python=3.10 && conda activate kana && \
-    pip config set global.index-url https://mirrors.sustech.edu.cn/pypi/web/simple && \
     echo "conda activate kana" >> ./.bashrc && \
     pip install transformers torch accelerate sentencepiece protobuf peft
