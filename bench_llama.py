@@ -74,8 +74,6 @@ if __name__ == '__main__':
         args.model,
         torch_dtype=amp_dtype,
         config=config,
-        low_cpu_mem_usage=True,
-        trust_remote_code=True
     )
     if args.peft:
         peft_config = LoraConfig(
@@ -86,7 +84,7 @@ if __name__ == '__main__':
             task_type="CAUSAL_LM",
         )
         model.add_adapter(peft_config)
-    tokenizer = LlamaTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    tokenizer = LlamaTokenizer.from_pretrained(args.model)
 
     special_tokens_dict = dict()
     if tokenizer.pad_token is None:
@@ -142,9 +140,9 @@ if __name__ == '__main__':
     for bench_type in bench:
         match bench_type:
             case "inference":
+                model = model.eval()
+                model = model.to(memory_format=torch.channels_last)
                 with torch.inference_mode(), torch.no_grad(), torch.cpu.amp.autocast(enabled=amp_enabled):
-                    model = model.eval()
-                    model = model.to(memory_format=torch.channels_last)
                     total_time = bench_inference(tokenizer, model, prompt, generate_kwargs, num_iter, num_warmup)
                 print("\n", "-" * 10, "Summary:", "-" * 10)
                 latency = total_time / (num_iter - num_warmup)
