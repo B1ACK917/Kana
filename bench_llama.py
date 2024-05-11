@@ -151,7 +151,8 @@ if __name__ == '__main__':
                 print(f"{bench_type} latency: {latency:.3f} sec.")
             case "finetune":
                 training_args = TrainingArguments(output_dir=args.output, num_train_epochs=args.epoch,
-                                                  per_device_train_batch_size=args.batch_size)
+                                                  per_device_train_batch_size=args.batch_size,
+                                                  use_cpu=True if args.device == "cpu" else False)
                 total_time, result = bench_finetune(args.data, tokenizer, model, training_args)
                 print("\n", "-" * 10, "Summary:", "-" * 10)
                 print(f"{bench_type} total elapsed: {total_time:.3f} sec.")
