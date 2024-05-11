@@ -37,6 +37,7 @@ parser.add_argument("--batch-size", default=1, type=int, help="batch size")
 parser.add_argument("--epoch", default=1.0, type=float, help="train epoch")
 parser.add_argument("--output", default="temp/model", type=str, help="finetune model output dir")
 parser.add_argument("--data", default="data/alpaca_small.json", type=str, help="finetune data input")
+parser.add_argument("--device", default="cpu", help="map device")
 args = parser.parse_args()
 print(args)
 
@@ -74,6 +75,7 @@ if __name__ == '__main__':
         args.model,
         torch_dtype=amp_dtype,
         config=config,
+        device_map=args.device
     )
     if args.peft:
         peft_config = LoraConfig(
